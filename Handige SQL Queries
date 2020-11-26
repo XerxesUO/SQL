@@ -1,0 +1,216 @@
+-- Handige query's
+
+-- Nieuw veld
+select case landcode
+ when 'NL' then 'NL'
+ when 'BE' then 'BE'
+ else 'XX' end as landgrp
+from debitr
+
+-- Nieuw veld 2
+select
+ 'Price category'=
+ case
+ when price is null then 'Not yet priced'
+ when ...
+ else '...' end,
+
+
+-- Subtotaal
+select
+ ordernr,
+ sum(esr_aantal) as Orderaantal,
+ sum(prijs_n)as Orderbedrag
+from orsrg group by ordernr
+
+-- Sub-subtotaal
+select
+ d.debnr,
+ s.artcode,
+ sum(esr_aantal) as Aantal,
+ sum(prijs_n) as Bedrag
+from debitr d
+ join orkrg k on k.debnr=d.debnr
+ join orsrg s on s.ordernr=k.ordernr
+where ord_soort='V'
+group by d.debnr, s.artcode
+order by d.debnr, s.artcode
+
+-- Aantal keer dat iets voorkomt
+select woonpl,count(woonpl) as Aantal from debitr group by woonpl order by count(woonpl)desc
+
+-- Selectie
+select * from debitr where landcode in ('US','BE')
+
+-- Subquery (handig voor update query's)
+select * from debitr where ID in (select ID from debitr where valcode='EUR')
+
+-- Lege waarden met left join
+select
+ d.debnr as Debiteur,
+ count(k.ordernr)as Orderaantal
+from debitr d
+ left join orkrg k on k.debnr=d.debnr
+group by d.debnr
+order by Orderaantal, Debiteur
+
+-- Eerste letter omzetten naar hoofdletter, de rest klein:
+select UPPER(left(city,1))+LOWER(right(City,len(City)-1)), City from AddressPostCodes
+
+-- Query op meerdere databases met beginletter
+select * from Deltabike_100.dbo.frkrg
+
+-- View
+if exists (select * from sysobjects where id = object_id(N'[dbo].[Menno]') and OBJECTPROPERTY(id, N'IsView') = 1)
+drop view [dbo].[Menno]
+GO
+SET QUOTED_IDENTIFIER  OFF    SET ANSI_NULLS  ON
+GO
+
+CREATE VIEW dbo.Menno
+AS
+SELECT
+ faknr as Factuurnummer,
+ fakdat as Factuurdatum,
+ regel as Regel,
+ s.artcode as Artikel,
+ oms45 as Omschrijving,
+ esr_aantal as Aantal,
+ pr_bedr as Bedrag,
+ ordernr as Ordernr,
+ verzdebnr as Verzenddebiteur,
+ a.artgrp as Artgrp
+FROM frhsrg s
+JOIN artbst a on a.artcode=s.artcode
+GO
+SET QUOTED_IDENTIFIER  OFF    SET ANSI_NULLS  ON
+GO
+
+-- Database in single-use?
+use[001]
+select DATABASEPROPERTY('001','IsSingleUser')
+
+-- Reparatie dbcc checkdb
+sp_dboption '001_Anker','single user','true'
+dbcc checktable (gbkmut,repair_rebuild)
+sp_dboption '001_Anker','single user','false'
+
+-- Database back-uppen in job:
+BACKUP DATABASE [200] TO  DISK = N'D:\SQL db backup globe\200 backup.BAK' WITH  INIT ,  NOUNLOAD ,  NAME = N'200 backup',  SKIP ,  STATS = 10,  NOFORMAT
+
+-- Variabelen
+declare @Jaar nchar(4)
+set @Jaar=2005
+ 
+-- Datum
+select
+getdate() as vandaag
+year(getdate())
+month(getdate())
+day(getdate())
+select datename(m,1)
+select datename(m,getdate())
+{d'1990-10-02'} -- of iets dergelijks' 
+CONVERT(CHAR,gbkmut.datum,105) as 'datum'
+select * from gbkmut with (nolock) where syscreated >= {d '2006-08-09'}
+ 
+-- Float bedragen afronden
+CONVERT(DECIMAL(20,2),gbkmut.bdr_hfl) as 'bedrag'
+
+-- Cursorfetch
+DECLARE @debcode varchar(30)
+DECLARE @vatcode varchar(3)
+DECLARE code CURSOR FOR
+      SELECT c.debcode,c.vatcode FROM [450].dbo.cicmpy c with (nolock)
+      JOIN [001].dbo.btwtrs b with (nolock) on b.btwtrans=c.vatcode
+      WHERE c.administration=001 and c.debcode is not null and c.cmp_fctry<>'NL'
+OPEN code
+FETCH NEXT FROM code
+   INTO @debcode, @vatcode
+WHILE @@FETCH_STATUS = 0
+BEGIN
+   UPDATE [001].dbo.cicmpy set vatcode=@vatcode where debcode=@debcode and (vatcode<>@vatcode or vatcode is null)
+FETCH NEXT FROM code
+INTO @debcode, @vatcode
+END
+CLOSE code
+DEALLOCATE code
+ 
+-- returns uit notitievelden halen voor export naar csv-bestanden: char(10)='carriage return', char(13)='line feed'
+select replace(replace(cast(cmp_note as varchar(2000)),char(10),''),char(13),' ') from cicmpy where debcode=1010
+ 
+ 
+-- Create table:
+CREATE TABLE [Export] (
+[fonds] char (10) NULL,
+[faktuurnr] char (8) NULL,
+[reknr] int NULL,
+[datum] datetime NULL,
+[dagbknr] int NULL,
+[oms25] char (60) NULL,
+[Bedrag] int NULL,
+[tegreknr] int NULL,
+[debnr] char (12) NULL,
+[uwref] char (30) NULL,
+[betaalref] char (20) NULL,
+[entryorigin] char (1) NULL,
+[type] varchar (6) NOT NULL,
+[id] int NULL,
+[id1] int NULL,
+[id2] int NULL )
+
+-- Connectie met andere server in queries:
+select top 1 * from [ANDR31712-INGC].[998_Relan].dbo.gbkmut
+
+-- Kopieer kolom naar andere database:
+Selecteer database 035 vervolgens query:
+update items set CSWeight = [015].dbo.items.CSWeight from items
+inner join [015].dbo.items on [015].dbo.items.itemcode = items.itemcode
+
+-- Stored procedure
+      if exists (select * from sysobjects where id = object_id(N'[dbo].[ToFisMarkerenDebiteur]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+      drop procedure [dbo].[ToFisMarkerenDebiteur]
+      GO
+     
+      set ANSI_NULLS ON
+      set QUOTED_IDENTIFIER ON
+      GO
+
+      -- =============================================
+      -- Datum : 26 juli 2006
+      -- =============================================
+      CREATE PROCEDURE [dbo].[ToFisMarkerenDebiteur]
+            @branche varchar(12) = 'reis'
+      AS
+      BEGIN
+            SET NOCOUNT ON;
+     
+      update cicmpy set textfield1='conversie '+@branche where debnr in (
+            select distinct
+             g.debnr
+            from gbkmut g with (nolock)
+            inner join CS_MvD_Branche b on b.Fonds=g.kstplcode and b.Branche=@branche
+            where
+             g.kstplcode is not null
+      )
+      END
+
+-- Insert in andere tabel
+
+      CREATE TABLE [Debiteuren] ([debnr] char (12) NULL)
+      insert into Debiteuren
+      select debnr from cicmpy where debnr is not null
+      order by debnr
+      select * from debiteuren
+      insert into <tabel> select .. as .., .. as ..
+
+-- 'Overige functies'
+
+select dbo.ISOWeekNumber(getdate())
+select system_user
+
+-- NULL voorwaarde in Crystal reports
+
+if isnull(cicmpy.debcode) then 1 else 0
+        -- en in een select:
+      isnull
